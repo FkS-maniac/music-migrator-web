@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>music-migrator — перенос библиотеки Spotify ↔ Яндекс Музыка</title>
+<title>music-migrator — публичный импорт Яндекс Музыки и перенос в Spotify</title>
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 <header>
   <h1>🎵 music-migrator</h1>
-  <p class="subtitle">Перенос музыкальной библиотеки между Spotify и Яндекс Музыкой — прямо в браузере</p>
+  <p class="subtitle">Публичный импорт Яндекс Музыки + перенос в Spotify — без лишних сложностей</p>
 </header>
 
 <nav class="tabs" id="tabs">
@@ -22,35 +22,50 @@
 
 <main>
   <section class="card" id="accounts">
-    <h2>1. Подключение аккаунтов</h2>
-    <div class="account-grid">
+    <h2>1. Подключение Spotify</h2>
+    <div class="account-grid single-column">
       <div class="account">
-        <h3>Spotify</h3>
         <label>Client ID (из <a href="https://developer.spotify.com/dashboard" target="_blank" rel="noopener">Developer Dashboard</a>)</label>
         <input type="text" id="spotify-client-id" placeholder="например 4f2c1a…" autocomplete="off">
         <p class="hint" id="spotify-redirect-hint"></p>
         <button class="btn" id="spotify-connect">Подключить Spotify</button>
         <span class="status" id="spotify-status">не подключён</span>
       </div>
+    </div>
+  </section>
+
+  <section class="card" id="public-yandex-card">
+    <h2>2. Публичный плейлист Яндекс Музыки</h2>
+    <p class="hint strong">Для браузера поддерживается только публичный плейлист: ссылка или iframe из Яндекс Музыки. Приватную библиотеку можно читать только через OAuth + proxy/backend.</p>
+
+    <label>Вставьте ссылку или iframe публичного плейлиста</label>
+    <input type="text" id="yandex-public-link" placeholder="https://music.yandex.ru/users/.../playlists/3 или iframe-код" autocomplete="off">
+    <div id="yandex-public-link-preview" class="public-link-preview hidden"></div>
+
+    <div class="mini-box">
+      <h3>Что получится</h3>
+      <p>Сайт распознает owner/kind, подготовит публичную ссылку к дальнейшей обработке и приведет данные к формату «Трек — Исполнитель».</p>
+    </div>
+  </section>
+
+  <details class="card advanced" open>
+    <summary>3. Дополнительные настройки (расширенный режим)</summary>
+    <div class="account-grid">
       <div class="account">
-        <h3>Яндекс Музыка</h3>
-        <label>OAuth-токен (<a href="https://oauth.yandex.ru/authorize?response_type=token&client_id=23cabbbdc6cd418abb4b39c32c41195d" target="_blank" rel="noopener">получить</a>)</label>
+        <h3>Яндекс Музыка (только для расширенного режима)</h3>
+        <label>OAuth-токен</label>
         <input type="password" id="yandex-token" placeholder="y0_AgAAAA…" autocomplete="off">
-        <label>Адрес вашего прокси (Cloudflare Worker, см. README)</label>
+        <label>Адрес вашего прокси (Cloudflare Worker)</label>
         <input type="text" id="yandex-proxy" placeholder="https://my-worker.username.workers.dev" autocomplete="off">
         <button class="btn" id="yandex-connect">Подключить Яндекс</button>
         <span class="status" id="yandex-status">не подключён</span>
-        <label style="margin-top:16px">Или публичный плейлист — без токена (на сайте Яндекс Музыки: плейлист → Поделиться → скопировать iframe/ссылку)</label>
-        <input type="text" id="yandex-public-link" placeholder="iframe-код или ссылка music.yandex.ru/users/…/playlists/3" autocomplete="off">
-        <div id="yandex-public-link-preview" class="public-link-preview hidden"></div>
-        <p class="hint">Поддерживаются iframe, обычная ссылка и формат owner/kind. Для чтения публичной библиотеки в браузере всё равно нужен proxy/backend, но ссылка распознаётся и готовится к обработке.</p>
+        <p class="hint">Этот режим нужен только для приватной библиотеки, OAuth + proxy/backend. Для обычного публичного импорта информация берется из ссылки / iframe.</p>
       </div>
     </div>
-    <p class="security">🔒 Токены хранятся только в вашем браузере (localStorage) и передаются напрямую в API сервиса. Для Яндекса без токена доступен только публичный плейлист, а приватную библиотеку лучше читать через токен + proxy/backend.</p>
-  </section>
+  </details>
 
   <section class="card" id="options-card">
-    <h2>2. Что переносить</h2>
+    <h2>4. Что переносить</h2>
     <div class="checkboxes" id="categories">
       <label><input type="checkbox" value="likes" checked> Лайки / «Мне нравится»</label>
       <label><input type="checkbox" value="playlists" checked> Плейлисты</label>
@@ -71,7 +86,7 @@
   </section>
 
   <section class="card">
-    <h2>3. Запуск</h2>
+    <h2>5. Запуск</h2>
     <div class="run-row">
       <button class="btn primary" id="run-btn">Начать перенос</button>
       <button class="btn danger hidden" id="abort-btn">Остановить</button>
@@ -98,7 +113,7 @@
 </main>
 
 <footer>
-  <p>Квоты Spotify: Development mode ≈ <b>700 треков/сутки</b>; при 429 прогресс сохраняется — повторный запуск продолжает с места остановки. Для публичного плейлиста Яндекс Музыки можно использовать iframe/ссылку, но реальный разбор треков всё равно идёт через proxy/backend.</p>
+  <p>Публичный плейлист Яндекс Музыки через ссылку/iframe — основной сценарий для браузера. Приватный каталог требует токена и backend/proxy; браузер сам по себе не может читать закрытые данные Яндекса.</p>
 </footer>
 
 <script type="module" src="js/main.js"></script>

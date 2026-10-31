@@ -9,8 +9,6 @@ import { exportJson, exportCsv, parseImportFile, download } from './files.js';
 
 const $ = id => document.getElementById(id);
 
-// ------------------------------------------------------------------ state
-
 const state = {
   aborted: false,
   processed: 0, total: 0,
@@ -37,7 +35,6 @@ const state = {
 };
 
 const report = { transferred: [], notFound: [], errors: [] };
-
 let direction = 'yandex-to-spotify';
 let spotify = null, yandex = null;
 let importFileData = null;
@@ -49,8 +46,6 @@ const NEEDS = {
   'export': { source: 'both' },
   'import': { source: 'file', target: 'both' },
 };
-
-// ------------------------------------------------------------ persistence
 
 const store = {
   get spotifyClientId() { return localStorage.getItem('mm-spotify-client-id') || ''; },
@@ -71,6 +66,7 @@ function renderPublicPlaylistPreview() {
     preview.innerHTML = '';
     return;
   }
+
   const ref = parsePlaylistRef(raw);
   if (!ref) {
     preview.classList.remove('hidden');
@@ -79,24 +75,21 @@ function renderPublicPlaylistPreview() {
   }
 
   const formatted = formatPlaylistRef(ref);
-  const demo = normalizeTrackArtistLine('На заре — Мельница');
+  const sample = normalizeTrackArtistLine('Ночь — Артем Пивоваров');
   preview.classList.remove('hidden');
   preview.innerHTML = `
     <strong>Распознан:</strong> ${escapeHtml(ref.owner)} / ${escapeHtml(ref.kind)}
     <span class="preview-muted">Формат: ${escapeHtml(formatted)}</span>
-    <span class="preview-muted">Подготовка к дальнейшей нормализации: ${escapeHtml(demo ? `${demo.title} — ${demo.artist}` : 'Трек — Исполнитель')}</span>
+    <span class="preview-muted">Промежуточный вид: ${escapeHtml(sample ? `${sample.title} — ${sample.artist}` : 'Трек — Исполнитель')}</span>
   `;
 }
-
-// ------------------------------------------------------------------- init
 
 $('spotify-client-id').value = store.spotifyClientId;
 $('yandex-token').value = store.yandexToken;
 $('yandex-proxy').value = store.yandexProxy;
 $('yandex-public-link').value = store.yandexPublicLink;
 renderPublicPlaylistPreview();
-$('spotify-redirect-hint').textContent =
-  `Redirect URI для Dashboard: ${window.location.origin + window.location.pathname}`;
+$('spotify-redirect-hint').textContent = `Redirect URI для Dashboard: ${window.location.origin + window.location.pathname}`;
 
 $('spotify-client-id').addEventListener('input', e => { store.spotifyClientId = e.target.value.trim(); });
 $('yandex-token').addEventListener('input', e => { store.yandexToken = e.target.value.trim(); });
@@ -117,8 +110,6 @@ $('yandex-public-link').addEventListener('input', e => {
   }
 })();
 
-// ------------------------------------------------------------------- tabs
-
 document.querySelectorAll('#tabs button').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('#tabs button').forEach(b => b.classList.remove('active'));
@@ -134,12 +125,10 @@ function updateUiForDirection() {
   $('journal-info').textContent = `Журнал «${direction}»: ${new Journal(direction).doneCount()} выполнено`;
 }
 
-// ---------------------------------------------------------- connect buttons
-
 $('spotify-connect').addEventListener('click', async () => {
   const clientId = store.spotifyClientId;
   if (!clientId) {
-    alert('Вставьте Client ID из Spotify Developer Dashboard (инструкция в README).');
+    alert('Вставьте Client ID из Spotify Developer Dashboard.');
     return;
   }
   spotify = new SpotifyClient(clientId);
@@ -153,7 +142,7 @@ $('spotify-connect').addEventListener('click', async () => {
 $('yandex-connect').addEventListener('click', async () => {
   const token = store.yandexToken, proxy = store.yandexProxy;
   if (!token || !proxy) {
-    alert('Нужны токен Яндекса и адрес прокси (Cloudflare Worker). Инструкция — в README.');
+    alert('Для расширенного режима нужны токен Яндекса и proxy. Если вы используете публичную ссылку, этот блок не обязателен.');
     return;
   }
   yandex = new YandexClient(token, proxy);
@@ -167,12 +156,10 @@ $('yandex-connect').addEventListener('click', async () => {
   }
 });
 
-// ------------------------------------------------------------------- run
-
 $('run-btn').addEventListener('click', runTransfer);
 $('abort-btn').addEventListener('click', () => { state.aborted = true; });
 $('reset-journal-btn').addEventListener('click', () => {
-  if (!confirm('Сбросить прогресс этой вкладки? Повторный запуск начнёт с нуля.')) return;
+  if (!confirm('Сбросить прогресс этой вкладки?')) return;
   new Journal(direction).reset();
   updateUiForDirection();
 });
@@ -190,6 +177,7 @@ $('download-report').addEventListener('click', () => {
     direction, date: new Date().toISOString(), ...report,
   }, null, 2), 'application/json');
 });
+
 $('download-notfound').addEventListener('click', () => {
   const rows = [['artist', 'track', 'reason']];
   for (const nf of report.notFound) {
@@ -215,8 +203,7 @@ async function runTransfer() {
   };
 
   const journal = new Journal(direction);
-  const showProgress = () => $('progress-wrap').classList.remove('hidden');
-  showProgress();
+  $('progress-wrap').classList.remove('hidden');
   state.tick('Подготовка…');
 
   try {
@@ -229,33 +216,28 @@ async function runTransfer() {
       const connector = svc ? spotify : yandex;
       if (!connector) throw new Error('Сначала подключите аккаунт (шаг 1).');
       if (svc) await ensureSpotify();
-      await likesToPlaylist({
-        connector, journal, options, state, report,
-        title: $('playlist-title').value || 'My Liked Songs',
-      });
+      await likesToPlaylist({ connector, journal, options, state, report, title: $('playlist-title').value || 'My Liked Songs' });
     } else {
-      const { source: srcKey, target: tgtKey } = NEEDS[direction];
+      const { source: srcKey } = NEEDS[direction];
       if (srcKey === 'yandex') {
         const link = parsePlaylistRef(store.yandexPublicLink);
         if (link) {
-          if (!store.yandexProxy) {
-            throw new Error('Публичный плейлист распознан, но для чтения треков нужен ваш Cloudflare Worker или аналогичный proxy.');
-          }
+          if (!store.yandexProxy) throw new Error('Публичный плейлист распознан, но для чтения нужен Cloudflare Worker или аналогичный proxy.');
           if (!spotify && !store.spotifyClientId) throw new Error('Подключите Spotify (шаг 1).');
           await ensureSpotify();
           const pub = new YandexPublicClient(store.yandexProxy);
           pub.owner = link.owner; pub.kind = link.kind;
-          pub.asPlaylist = confirm('OK = перенести как отдельный плейлист в Spotify,\nОтмена = добавить в «Любимые треки» Spotify');
+          pub.asPlaylist = confirm('OK = отдельный плейлист в Spotify\nОтмена = добавить в «Любимые треки»');
           options.categories = pub.asPlaylist ? ['playlists'] : ['likes'];
           await transferLibrary({ source: pub, target: spotify, journal, options, state, report });
         } else {
-          if (!yandex) throw new Error('Вставьте ссылку/iframe публичного плейлиста или подключите Яндекс токеном (шаг 1).');
+          if (!yandex) throw new Error('Вставьте ссылку/iframe публичного плейлиста или подключите Яндекс токеном в расширенных настройках.');
           if (!spotify) throw new Error('Подключите Spotify (шаг 1).');
           await ensureSpotify();
           await transferLibrary({ source: yandex, target: spotify, journal, options, state, report });
         }
       } else {
-        if (!yandex) throw new Error('Подключите Яндекс токеном (шаг 1) — приёмник требует записи.');
+        if (!yandex) throw new Error('Подключите Яндекс токеном (расширенный режим).');
         if (!spotify) throw new Error('Подключите Spotify (шаг 1).');
         await ensureSpotify();
         await transferLibrary({ source: spotify, target: yandex, journal, options, state, report });
@@ -291,13 +273,13 @@ async function runExport(options) {
   } else {
     const link = parsePlaylistRef(store.yandexPublicLink);
     if (link) {
-      if (!store.yandexProxy) throw new Error('Для чтения публичного плейлиста нужен Cloudflare Worker или аналогичный proxy.');
+      if (!store.yandexProxy) throw new Error('Для публичного плейлиста нужен Cloudflare Worker или аналогичный proxy.');
       const pub = new YandexPublicClient(store.yandexProxy);
       pub.owner = link.owner; pub.kind = link.kind;
       state.tick('Чтение публичного плейлиста…');
       lib = await pub.fetchPlaylist(link.owner, link.kind, { asPlaylist: true });
     } else {
-      if (!yandex) throw new Error('Вставьте ссылку/iframe публичного плейлиста или подключите Яндекс токеном (шаг 1).');
+      if (!yandex) throw new Error('Вставьте ссылку/iframe публичного плейлиста или подключите Яндекс токеном в расширенном режиме.');
       state.tick('Чтение библиотеки Яндекса…');
       lib = await yandex.fetchLibrary(new Set(options.categories));
     }
@@ -316,9 +298,7 @@ async function runImport(options, journal) {
   if (!target) throw new Error('Сначала подключите аккаунт-приёмник (шаг 1).');
   if (useSpotify) await ensureSpotify();
   state.total = importFileData.likes.length;
-  await transferLibrary({
-    source: new FileSource(importFileData), target, journal, options, state, report,
-  });
+  await transferLibrary({ source: new FileSource(importFileData), target, journal, options, state, report });
 }
 
 class FileSource {
@@ -331,8 +311,7 @@ function finishRun(message, warn = false) {
   $('progress-status').style.color = warn ? '#e74c3c' : '';
   $('abort-btn').classList.add('hidden');
   $('run-btn').disabled = false;
-  $('journal-info').textContent =
-    `Журнал «${direction}»: ${new Journal(direction).doneCount()} выполнено`;
+  $('journal-info').textContent = `Журнал «${direction}»: ${new Journal(direction).doneCount()} выполнено`;
   renderReport();
 }
 
@@ -344,16 +323,13 @@ function renderReport() {
     <div class="stat"><b style="color:var(--danger)">${report.errors.length}</b>ошибочные</div>`;
   $('notfound-count').textContent = report.notFound.length;
   $('errors-count').textContent = report.errors.length;
-  $('notfound-list').innerHTML = report.notFound
-    .map(nf => `<li>${escapeHtml(nf.title)} <i>(${escapeHtml(nf.reason)})</i></li>`).join('');
-  $('errors-list').innerHTML = report.errors
-    .map(e => `<li>${escapeHtml(e.title)} → ${escapeHtml(e.reason)}</li>`).join('');
+  $('notfound-list').innerHTML = report.notFound.map(nf => `<li>${escapeHtml(nf.title)} <i>(${escapeHtml(nf.reason)})</i></li>`).join('');
+  $('errors-list').innerHTML = report.errors.map(e => `<li>${escapeHtml(e.title)} → ${escapeHtml(e.reason)}</li>`).join('');
 }
 
 const HTML_ESCAPES = { 38: 'amp', 60: 'lt', 62: 'gt', 34: 'quot', 39: '#39' };
 function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, ch =>
-    '&' + HTML_ESCAPES[ch.charCodeAt(0)] + ';');
+  return String(s).replace(/[&<>"']/g, ch => '&' + HTML_ESCAPES[ch.charCodeAt(0)] + ';');
 }
 
 updateUiForDirection();

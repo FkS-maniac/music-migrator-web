@@ -1,4 +1,4 @@
-:root {
+@root {
   --bg: #0f1115;
   --card: #1a1d24;
   --border: #2a2f3a;
@@ -33,10 +33,11 @@ main { max-width: 860px; margin: 0 auto; padding: 0 16px 32px; }
   background: var(--card); border: 1px solid var(--border);
   border-radius: 12px; padding: 20px; margin-bottom: 16px;
 }
-.card h2 { margin-top: 0; font-size: 1.1rem; }
+.card h2 { margin-top: 0; font-size: 1.08rem; }
 .hidden { display: none !important; }
 
 .account-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.account-grid.single-column { grid-template-columns: 1fr; }
 @media (max-width: 640px) { .account-grid { grid-template-columns: 1fr; } }
 .account h3 { margin: 0 0 8px; }
 label { display: block; color: var(--muted); font-size: 0.9rem; margin: 10px 0 4px; }
@@ -54,6 +55,7 @@ input[type="text"], input[type="password"], input[type="number"] {
 .status { margin-left: 10px; color: var(--muted); font-size: 0.9rem; }
 .status.ok { color: var(--accent); }
 .hint { color: var(--muted); font-size: 0.85rem; word-break: break-all; }
+.hint.strong { color: var(--accent-2); }
 .security { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--border); padding-top: 12px; margin-bottom: 0; }
 
 .checkboxes { display: flex; flex-wrap: wrap; gap: 16px; margin: 8px 0; }
@@ -87,6 +89,17 @@ details ul { max-height: 300px; overflow-y: auto; font-size: 0.9rem; color: var(
 .public-link-preview strong { color: var(--accent-2); }
 .preview-muted { display: block; color: var(--muted); }
 .preview-warning { color: #ffc4c4; }
+
+.mini-box {
+  margin-top: 16px; padding: 12px 14px; background: rgba(255, 219, 77, 0.05);
+  border: 1px solid var(--border); border-radius: 10px;
+}
+.mini-box h3 { margin: 0 0 8px; }
+.mini-box p { margin: 0; color: var(--muted); }
+
+.advanced summary {
+  font-weight: 600; color: var(--text);
+}
 
 footer { max-width: 860px; margin: 0 auto; padding: 0 16px 32px; color: var(--muted); font-size: 0.85rem; }
 a { color: var(--accent-2); }
