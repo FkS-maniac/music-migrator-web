@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>music-migrator — перенос библиотеки Spotify ↔ Яндекс Музыка</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header>
+  <h1>🎵 music-migrator</h1>
+  <p class="subtitle">Перенос музыкальной библиотеки между Spotify и Яндекс Музыкой — прямо в браузере</p>
+</header>
+
+<nav class="tabs" id="tabs">
+  <button data-direction="yandex-to-spotify" class="active">Яндекс → Spotify</button>
+  <button data-direction="spotify-to-yandex">Spotify → Яндекс</button>
+  <button data-direction="likes-to-playlist">Лайки → плейлист</button>
+  <button data-direction="export">Экспорт в файл</button>
+  <button data-direction="import">Импорт из файла</button>
+</nav>
+
+<main>
+  <!-- Настройки аккаунтов -->
+  <section class="card" id="accounts">
+    <h2>1. Подключение аккаунтов</h2>
+    <div class="account-grid">
+      <div class="account">
+        <h3>Spotify</h3>
+        <label>Client ID (из <a href="https://developer.spotify.com/dashboard" target="_blank" rel="noopener">Developer Dashboard</a>)</label>
+        <input type="text" id="spotify-client-id" placeholder="например 4f2c1a…" autocomplete="off">
+        <p class="hint" id="spotify-redirect-hint"></p>
+        <button class="btn" id="spotify-connect">Подключить Spotify</button>
+        <span class="status" id="spotify-status">не подключён</span>
+      </div>
+      <div class="account">
+        <h3>Яндекс Музыка</h3>
+        <label>OAuth-токен (<a href="https://oauth.yandex.ru/authorize?response_type=token&client_id=23cabbbdc6cd418abb4b39c32c41195d" target="_blank" rel="noopener">получить</a>)</label>
+        <input type="password" id="yandex-token" placeholder="y0_AgAAAA…" autocomplete="off">
+        <label>Адрес вашего прокси (Cloudflare Worker, см. README)</label>
+        <input type="text" id="yandex-proxy" placeholder="https://my-worker.username.workers.dev" autocomplete="off">
+        <button class="btn" id="yandex-connect">Подключить Яндекс</button>
+        <span class="status" id="yandex-status">не подключён</span>
+      </div>
+    </div>
+    <p class="security">🔒 Токены хранятся только в вашем браузере (localStorage) и передаются напрямую в API сервиса. Для Яндекса — только через ваш собственный прокси. Никаких логинов и паролей.</p>
+  </section>
+
+  <!-- Настройки переноса -->
+  <section class="card" id="options-card">
+    <h2>2. Что переносить</h2>
+    <div class="checkboxes" id="categories">
+      <label><input type="checkbox" value="likes" checked> Лайки / «Мне нравится»</label>
+      <label><input type="checkbox" value="playlists" checked> Плейлисты</label>
+      <label><input type="checkbox" value="albums"> Альбомы</label>
+      <label><input type="checkbox" value="artists"> Подписки на артистов</label>
+    </div>
+    <div class="checkboxes">
+      <label><input type="checkbox" id="dry-run"> Режим dry-run (ничего не записывать)</label>
+      <label><input type="checkbox" id="strict-search"> Strict search (повтор по первому артисту)</label>
+      <label>Задержка поиска: <input type="number" id="search-delay" value="1.0" min="0.1" step="0.1" style="width:5em"> с</label>
+    </div>
+    <div id="playlist-title-row" class="hidden">
+      <label>Название плейлиста: <input type="text" id="playlist-title" value="My Liked Songs"></label>
+    </div>
+    <div id="file-input-row" class="hidden">
+      <label>Файл библиотеки (JSON/CSV): <input type="file" id="import-file" accept=".json,.csv"></label>
+    </div>
+  </section>
+
+  <!-- Запуск -->
+  <section class="card">
+    <h2>3. Запуск</h2>
+    <div class="run-row">
+      <button class="btn primary" id="run-btn">Начать перенос</button>
+      <button class="btn danger hidden" id="abort-btn">Остановить</button>
+      <span id="journal-info" class="hint"></span>
+      <button class="btn small" id="reset-journal-btn" title="Сбросить прогресс этой вкладки">Сбросить прогресс</button>
+    </div>
+    <div id="progress-wrap" class="hidden">
+      <div class="progress-status" id="progress-status">Готов...</div>
+      <div class="progress-bar"><div id="progress-fill"></div></div>
+      <div class="progress-counters" id="progress-counters"></div>
+    </div>
+  </section>
+
+  <!-- Отчёт -->
+  <section class="card hidden" id="report-card">
+    <h2>Отчёт</h2>
+    <div class="report-summary" id="report-summary"></div>
+    <div class="report-actions">
+      <button class="btn small" id="download-report">Скачать отчёт (JSON)</button>
+      <button class="btn small" id="download-notfound">Скачать «не найдено» (CSV)</button>
+    </div>
+    <details id="notfound-details"><summary>Не найдено (<span id="notfound-count">0</span>)</summary><ul id="notfound-list"></ul></details>
+    <details id="errors-details"><summary>Ошибочные (<span id="errors-count">0</span>)</summary><ul id="errors-list"></ul></details>
+  </section>
+</main>
+
+<footer>
+  <p>Квоты Spotify: Development mode ≈ <b>700 треков/сутки</b>; при 429 прогресс сохраняется — повторный запуск продолжает с места остановки. Токен Яндекса действует ~год, отзывается в Яндекс ID.</p>
+</footer>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
