@@ -1,29 +1,36 @@
 import { SpotifyClient } from './spotify.js';
-import { YandexPublicClient, parsePlaylistRef } from './yandex.js';
-import { transferLibrary, RateLimitStop } from './transfer.js';
+import { parsePlaylistRef } from './yandex.js';
+import { download, parseImportFile } from './files.js';
 import { Journal } from './journal.js';
+import { transferLibrary, RateLimitStop } from './transfer.js';
 
 const $ = id => document.getElementById(id);
 
-const state = {
-  spotify: null,
-  playlist: null,
-  tracks: [],
-  report: { transferred: [], notFound: [], errors: [] },
-};
+let activeMode = 'yandex-import';
+let importedTracks = [];
+let loadedFile = null;
+let spotify = null;
 
-function setStatus(msg, ok = false) {
-  $('#progress-status').textContent = msg;
-  $('#progress-fill').style.width = ok ? '100%' : '0%';
+const reportState = { transferred: [], notFound: [], errors: [] };
+
+function setActiveMode(mode) {
+  activeMode = mode;
+  document.querySelectorAll('.panel').forEach(panel => panel.classList.add('hidden'));
+  if (mode === 'yandex-import') $('#yandex-import-panel').classList.remove('hidden');
+  if (mode === 'file-import') $('#file-import-panel').classList.remove('hidden');
 }
 
-function renderTrackList() {
-  const lines = state.tracks.map(t => `${t.title} — ${t.artists.join(', ')}`);
-  $('#track-list').value = lines.join('\n');
-}
+document.querySelectorAll('#tabs button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#tabs button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    setActiveMode(btn.dataset.direction);
+  });
+});
 
-function renderMeta(ref) {
-  const meta = $('#playlist-meta');
+function renderYandexMeta(text) {
+  const meta = $('#yandex-meta');
+  const ref = parsePlaylistRef(text);
   if (!ref) {
     meta.classList.add('hidden');
     meta.textContent = '';
@@ -33,155 +40,179 @@ function renderMeta(ref) {
   meta.textContent = `Распознан: ${ref.owner} / ${ref.kind}`;
 }
 
-function escapeHtml(str) {
-  return String(str).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+function safeDownload(filename, content, type) {
+  download(filename, content, type);
 }
 
-function renderReport() {
-  const card = $('#report-card');
-  const list = $('#report-list');
-  const summary = $('#report-summary');
+$('#make-file-btn').addEventListener('click', () => {
+  const raw = $('#yandex-iframe').value.trim();
+  if (!raw) {
+    alert('Вставьте ссылку или iframe Яндекс Музыки');
+    return;
+  }
 
-  card.classList.remove('hidden');
-  summary.innerHTML = `
-    <div class="stat"><b>${state.report.transferred.length}</b> перенесено</div>
-    <div class="stat"><b>${state.report.notFound.length}</b> не найдено</div>
-    <div class="stat"><b>${state.report.errors.length}</b> ошибки</div>
-  `;
+  const ref = parsePlaylistRef(raw);
+  if (!ref) {
+    alert('Не удалось распознать ссылку. Используйте формат music.yandex.ru/users/.../playlists/3 либо iframe src=.../playlist/...');
+    return;
+  }
 
-  list.innerHTML = [
-    ...state.report.transferred.map(x => `<li>${escapeHtml(x)}</li>`),
-    ...state.report.notFound.map(x => `<li class="warn">${escapeHtml(x.title)} — ${escapeHtml(x.reason)}</li>`),
-    ...state.report.errors.map(x => `<li class="danger">${escapeHtml(x.title)} — ${escapeHtml(x.reason)}</li>`),
-  ].join('');
-}
+  const payload = {
+    source: 'yandex-public-playlist',
+    owner: ref.owner,
+    kind: ref.kind,
+    raw,
+    createdAt: new Date().toISOString(),
+    tracks: [],
+    notes: 'Список треков можно собрать вручную или через proxy/backend. Этот JSON нужен как файл-источник для дальнейшего импорта в Spotify.'
+  };
 
-async function ensureSpotify() {
+  safeDownload('yandex-playlist-template.json', JSON.stringify(payload, null, 2), 'application/json');
+  renderYandexMeta(raw);
+});
+
+$('#download-template-btn').addEventListener('click', () => {
+  const sample = {
+    source: 'yandex-public-playlist',
+    owner: 'example_owner',
+    kind: '12345',
+    raw: 'https://music.yandex.ru/users/example_owner/playlists/12345',
+    tracks: [
+      { title: 'Трек 1', artist: 'Исполнитель 1' },
+      { title: 'Трек 2', artist: 'Исполнитель 2' }
+    ]
+  };
+  safeDownload('yandex-playlist-template.json', JSON.stringify(sample, null, 2), 'application/json');
+});
+
+$('#preview-file-btn').addEventListener('click', async () => {
+  const file = $('#playlist-file').files[0];
+  if (!file) {
+    alert('Выберите файл');
+    return;
+  }
+
+  const text = await file.text();
+  loadedFile = file;
+  $('#file-preview').value = text.slice(0, 4000);
+});
+
+$('#spotify-client-id').value = localStorage.getItem('mm-spotify-client-id') || '';
+$('#spotify-redirect-hint').textContent = `Redirect URI: ${window.location.origin + window.location.pathname}`;
+
+$('#spotify-client-id').addEventListener('input', e => localStorage.setItem('mm-spotify-client-id', e.target.value.trim()));
+
+$('#spotify-connect').addEventListener('click', async () => {
   const clientId = $('#spotify-client-id').value.trim();
-  if (!clientId) throw new Error('Введите Spotify Client ID');
+  if (!clientId) {
+    alert('Введите Spotify Client ID');
+    return;
+  }
 
-  if (!state.spotify) {
-    state.spotify = new SpotifyClient(clientId);
-    if (!(await state.spotify.authorize())) {
-      await state.spotify.login();
-      return false;
-    }
+  spotify = new SpotifyClient(clientId);
+  if (!(await spotify.authorize())) {
+    await spotify.login();
+    return;
   }
 
   $('#spotify-status').textContent = 'подключён';
   $('#spotify-status').classList.add('ok');
-  return true;
-}
-
-function initSpotifyRedirectHint() {
-  $('#spotify-redirect-hint').textContent = `Redirect URI: ${window.location.origin + window.location.pathname}`;
-}
-
-async function parsePlaylist() {
-  const raw = $('#yandex-link').value.trim();
-  const proxy = $('#yandex-proxy').value.trim();
-  if (!raw) throw new Error('Вставьте ссылку или iframe Яндекс Музыки');
-  if (!proxy) throw new Error('Нужен proxy URL для чтения публичного плейлиста Яндекс Музыки');
-
-  const ref = parsePlaylistRef(raw);
-  if (!ref) throw new Error('Не удалось распознать ссылку/iframe. Используйте формат music.yandex.ru/users/.../playlists/3 или iframe src=.../playlist/...');
-
-  const client = new YandexPublicClient(proxy);
-  client.owner = ref.owner;
-  client.kind = ref.kind;
-  client.asPlaylist = $('#import-mode').checked;
-  const lib = await client.fetchPlaylist(ref.owner, ref.kind, { asPlaylist: client.asPlaylist });
-  const tracks = (lib.likes.length ? lib.likes : lib.playlists.flatMap(p => p.tracks || [])) || [];
-
-  state.playlist = client;
-  state.tracks = tracks.map(t => ({
-    title: t.title || 'Без названия',
-    artists: Array.isArray(t.artists) && t.artists.length ? t.artists : ['Неизвестно'],
-  }));
-
-  renderMeta(ref);
-  renderTrackList();
-  setStatus('Плейлист распознан и готов к импорту', true);
-}
-
-$('#spotify-connect').addEventListener('click', async () => {
-  try {
-    const ok = await ensureSpotify();
-    if (!ok) return;
-  } catch (err) {
-    alert(err.message || err);
-  }
 });
 
-$('#parse-btn').addEventListener('click', async () => {
-  try {
-    $('#progress-wrap').classList.remove('hidden');
-    await parsePlaylist();
-  } catch (err) {
-    setStatus(err.message || String(err), false);
-    alert(err.message || err);
-  }
-});
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+}
 
-$('#download-txt').addEventListener('click', () => {
-  if (!state.tracks.length) {
-    alert('Сначала распознайте плейлист');
-    return;
-  }
-  const text = state.tracks.map(t => `${t.title} — ${t.artists.join(', ')}`).join('\n');
-  const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'yandex-playlist.txt';
-  a.click();
-  URL.revokeObjectURL(a.href);
-});
+displayReport = () => {
+  const reportCard = $('#report-card');
+  reportCard.classList.remove('hidden');
+  const summary = $('#report-summary');
+  const list = $('#report-list');
+  summary.innerHTML = `
+    <div class="stat"><b>${reportState.transferred.length}</b> перенесено</div>
+    <div class="stat"><b>${reportState.notFound.length}</b> не найдено</div>
+    <div class="stat"><b>${reportState.errors.length}</b> ошибки</div>
+  `;
+  list.innerHTML = [
+    ...reportState.transferred.map(x => `<li>${escapeHtml(x)}</li>`),
+    ...reportState.notFound.map(x => `<li class="warn">${escapeHtml(x.title)} — ${escapeHtml(x.reason)}</li>`),
+    ...reportState.errors.map(x => `<li class="danger">${escapeHtml(x.title)} — ${escapeHtml(x.reason)}</li>`),
+  ].join('');
+};
 
 $('#import-spotify').addEventListener('click', async () => {
   try {
-    $('#progress-wrap').classList.remove('hidden');
-    if (!state.playlist) throw new Error('Сперва распознайте ссылку и соберите список');
-    const ok = await ensureSpotify();
-    if (!ok) return;
+    if (!loadedFile) {
+      alert('Сначала загрузите файл с плеером Яндекс Музыки');
+      return;
+    }
 
+    const clientId = $('#spotify-client-id').value.trim();
+    if (!clientId) {
+      alert('Введите Client ID Spotify');
+      return;
+    }
+
+    if (!spotify) {
+      spotify = new SpotifyClient(clientId);
+      if (!(await spotify.authorize())) {
+        await spotify.login();
+        return;
+      }
+    }
+
+    const fileText = await loadedFile.text();
+    const parsed = parseImportFile(fileText, loadedFile.name);
+
+    const journal = new Journal('file-import');
+    const progress = {
+      aborted: false,
+      processed: 0,
+      total: parsed.likes.length,
+      tick(msg) { $('#progress-status').textContent = msg; },
+      async delay(ms) { return new Promise(resolve => setTimeout(resolve, ms)); },
+      async wait(seconds, reason) {
+        $('#progress-status').textContent = `${reason}: ждём ${seconds}s`;
+        await new Promise(r => setTimeout(r, seconds * 1000));
+      },
+    };
+
+    const target = spotify;
     const options = {
-      categories: $('#import-mode').checked ? ['playlists'] : ['likes'],
+      categories: ['likes'],
       dryRun: false,
       strictSearch: false,
       searchDelayMs: 1000,
     };
 
-    const progress = {
-      aborted: false,
-      processed: 0,
-      total: 0,
-      tick(msg) { setStatus(msg); },
-      async delay(ms) { return new Promise(r => setTimeout(r, ms)); },
-      async wait(seconds, reason) {
-        const end = Date.now() + seconds * 1000;
-        while (Date.now() < end) {
-          setStatus(`${reason}: ждём ${Math.ceil((end - Date.now()) / 1000)}c…`);
-          await new Promise(r => setTimeout(r, 1000));
-        }
-      },
-    };
+    reportState.transferred = [];
+    reportState.notFound = [];
+    reportState.errors = [];
 
-    const report = { transferred: [], notFound: [], errors: [] };
-    const journal = new Journal('yandex-public-import');
+    $('#progress-wrap').classList.remove('hidden');
+    $('#progress-status').textContent = 'Импорт...';
+    $('#progress-fill').style.width = '10%';
 
-    await transferLibrary({ source: state.playlist, target: state.spotify, journal, options, state: progress, report });
-    state.report = report;
-    renderReport();
-    setStatus('Готово: импорт завершён', true);
+    await transferLibrary({
+      source: { fetchLibrary: async () => parsed },
+      target,
+      journal,
+      options,
+      state: progress,
+      report: reportState,
+    });
+
+    $('#progress-fill').style.width = '100%';
+    $('#progress-status').textContent = 'Готово';
+    displayReport();
   } catch (err) {
     if (err instanceof RateLimitStop) {
-      setStatus('Остановлено: ' + err.message, false);
+      $('#progress-status').textContent = err.message;
     } else {
-      setStatus(err.message || String(err), false);
+      $('#progress-status').textContent = err.message || String(err);
     }
     alert(err.message || err);
   }
 });
 
-initSpotifyRedirectHint();
-setStatus('Готово', true);
+setActiveMode('yandex-import');

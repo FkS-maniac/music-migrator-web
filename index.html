@@ -1,50 +1,58 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Yandex → Spotify importer</title>
-<link rel="stylesheet" href="styles.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Yandex → Spotify importer</title>
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <header>
     <h1>🎵 Yandex → Spotify</h1>
-    <p class="subtitle">Импорт публичного плейлиста Яндекс Музыки в Spotify через удобный список треков</p>
+    <p class="subtitle">Импорт из публичного плейлиста Яндекс Музыки в Spotify</p>
   </header>
 
+  <nav class="tabs" id="tabs">
+    <button data-direction="yandex-import" class="active">Публичный Yandex</button>
+    <button data-direction="file-import">Импорт из файла</button>
+  </nav>
+
   <main>
+    <section id="yandex-import-panel" class="card panel">
+      <h2>1. Сохраните iframe / ссылку Яндекс Музыки в файл</h2>
+      <label>Вставьте iframe или ссылку</label>
+      <textarea id="yandex-iframe" rows="6" placeholder="<iframe ... src=\"https://music.yandex.ru/iframe/playlist/...\"></iframe>"></textarea>
+
+      <label>Proxy URL (если вы хотите пробовать выгрузку через proxy)</label>
+      <input id="yandex-proxy" type="text" placeholder="https://my-worker.example.workers.dev">
+
+      <div class="actions">
+        <button id="make-file-btn" class="btn primary">Сохранить как файл</button>
+        <button id="download-template-btn" class="btn">Скачать шаблон</button>
+      </div>
+
+      <div id="yandex-meta" class="meta hidden"></div>
+    </section>
+
+    <section id="file-import-panel" class="card panel hidden">
+      <h2>2. Загрузите файл плейлиста</h2>
+      <label>Файл JSON / TXT / CSV</label>
+      <input id="playlist-file" type="file" accept=".json,.txt,.csv">
+
+      <div class="actions">
+        <button id="preview-file-btn" class="btn">Предпросмотр</button>
+      </div>
+
+      <textarea id="file-preview" rows="10" readonly placeholder="Тут появится текст из файла"></textarea>
+    </section>
+
     <section class="card">
-      <h2>1. Подключите Spotify</h2>
+      <h2>3. Подключите Spotify</h2>
       <label>Client ID</label>
       <input id="spotify-client-id" type="text" placeholder="Spotify Client ID">
       <p class="hint" id="spotify-redirect-hint"></p>
       <button id="spotify-connect" class="btn">Подключить Spotify</button>
       <span id="spotify-status" class="status">не подключён</span>
-    </section>
-
-    <section class="card">
-      <h2>2. Вставьте ссылку или iframe Яндекс Музыки</h2>
-      <label>Ссылка / iframe</label>
-      <input id="yandex-link" type="text" placeholder="https://music.yandex.ru/users/.../playlists/3 или iframe-код">
-
-      <label>Proxy URL (обязательно для чтения публичного плейлиста)</label>
-      <input id="yandex-proxy" type="text" placeholder="https://my-worker.example.workers.dev">
-
-      <div class="row">
-        <label class="switch"><input id="import-mode" type="checkbox"> Импортировать как отдельный плейлист в Spotify</label>
-      </div>
-
-      <div class="actions">
-        <button id="parse-btn" class="btn primary">Распознать и собрать список</button>
-        <button id="download-txt" class="btn">Скачать список (.txt)</button>
-      </div>
-
-      <div id="playlist-meta" class="meta hidden"></div>
-    </section>
-
-    <section class="card">
-      <h2>3. Список треков</h2>
-      <textarea id="track-list" readonly placeholder="После распознавания ссылка будет преобразована в список вида: Трек — Исполнитель"></textarea>
     </section>
 
     <section class="card">
