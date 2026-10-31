@@ -21,7 +21,6 @@
 </nav>
 
 <main>
-  <!-- Настройки аккаунтов -->
   <section class="card" id="accounts">
     <h2>1. Подключение аккаунтов</h2>
     <div class="account-grid">
@@ -41,15 +40,15 @@
         <input type="text" id="yandex-proxy" placeholder="https://my-worker.username.workers.dev" autocomplete="off">
         <button class="btn" id="yandex-connect">Подключить Яндекс</button>
         <span class="status" id="yandex-status">не подключён</span>
-        <label style="margin-top:16px">Или публичный плейлист — без токена (на сайте Яндекс Музыки: плейлист → Поделиться → скопировать HTML-код)</label>
+        <label style="margin-top:16px">Или публичный плейлист — без токена (на сайте Яндекс Музыки: плейлист → Поделиться → скопировать iframe/ссылку)</label>
         <input type="text" id="yandex-public-link" placeholder="iframe-код или ссылка music.yandex.ru/users/…/playlists/3" autocomplete="off">
-        <p class="hint">Работает для публичных плейлистов, включая «Мне нравится». Токен нужен только для записи в Яндекс и приватных плейлистов.</p>
+        <div id="yandex-public-link-preview" class="public-link-preview hidden"></div>
+        <p class="hint">Поддерживаются iframe, обычная ссылка и формат owner/kind. Для чтения публичной библиотеки в браузере всё равно нужен proxy/backend, но ссылка распознаётся и готовится к обработке.</p>
       </div>
     </div>
-    <p class="security">🔒 Токены хранятся только в вашем браузере (localStorage) и передаются напрямую в API сервиса. Для Яндекса — только через ваш собственный прокси. Никаких логинов и паролей.</p>
+    <p class="security">🔒 Токены хранятся только в вашем браузере (localStorage) и передаются напрямую в API сервиса. Для Яндекса без токена доступен только публичный плейлист, а приватную библиотеку лучше читать через токен + proxy/backend.</p>
   </section>
 
-  <!-- Настройки переноса -->
   <section class="card" id="options-card">
     <h2>2. Что переносить</h2>
     <div class="checkboxes" id="categories">
@@ -71,7 +70,6 @@
     </div>
   </section>
 
-  <!-- Запуск -->
   <section class="card">
     <h2>3. Запуск</h2>
     <div class="run-row">
@@ -87,7 +85,6 @@
     </div>
   </section>
 
-  <!-- Отчёт -->
   <section class="card hidden" id="report-card">
     <h2>Отчёт</h2>
     <div class="report-summary" id="report-summary"></div>
@@ -101,7 +98,7 @@
 </main>
 
 <footer>
-  <p>Квоты Spotify: Development mode ≈ <b>700 треков/сутки</b>; при 429 прогресс сохраняется — повторный запуск продолжает с места остановки. Токен Яндекса действует ~год, отзывается в Яндекс ID.</p>
+  <p>Квоты Spotify: Development mode ≈ <b>700 треков/сутки</b>; при 429 прогресс сохраняется — повторный запуск продолжает с места остановки. Для публичного плейлиста Яндекс Музыки можно использовать iframe/ссылку, но реальный разбор треков всё равно идёт через proxy/backend.</p>
 </footer>
 
 <script type="module" src="js/main.js"></script>

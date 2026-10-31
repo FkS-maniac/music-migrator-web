@@ -2,7 +2,7 @@
 // Порт логики musictransfer/cli.py в браузер.
 
 import { SpotifyClient } from './spotify.js';
-import { YandexClient, YandexPublicClient, parsePlaylistRef } from './yandex.js';
+import { YandexClient, YandexPublicClient, parsePlaylistRef, formatPlaylistRef, normalizeTrackArtistLine } from './yandex.js';
 import { Journal } from './journal.js';
 import { transferLibrary, likesToPlaylist, RateLimitStop } from './transfer.js';
 import { exportJson, exportCsv, parseImportFile, download } from './files.js';
@@ -26,7 +26,6 @@ const state = {
     return new Promise(resolve => setTimeout(resolve, ms));
   },
   async wait(seconds, reason) {
-    // Ожидание 429 ≤ 300 c: отсчёт и продолжение (раздел 7.1).
     const until = Date.now() + seconds * 1000;
     while (Date.now() < until) {
       if (state.aborted) throw new Error('Прервано пользователем');
@@ -64,21 +63,49 @@ const store = {
   set yandexPublicLink(v) { localStorage.setItem('mm-yandex-public-link', v); },
 };
 
+function renderPublicPlaylistPreview() {
+  const preview = $('yandex-public-link-preview');
+  const raw = store.yandexPublicLink.trim();
+  if (!raw) {
+    preview.classList.add('hidden');
+    preview.innerHTML = '';
+    return;
+  }
+  const ref = parsePlaylistRef(raw);
+  if (!ref) {
+    preview.classList.remove('hidden');
+    preview.innerHTML = '<span class="preview-warning">Не удалось распознать публичный плейлист. Вставьте ссылку или iframe Яндекс Музыки.</span>';
+    return;
+  }
+
+  const formatted = formatPlaylistRef(ref);
+  const demo = normalizeTrackArtistLine('На заре — Мельница');
+  preview.classList.remove('hidden');
+  preview.innerHTML = `
+    <strong>Распознан:</strong> ${escapeHtml(ref.owner)} / ${escapeHtml(ref.kind)}
+    <span class="preview-muted">Формат: ${escapeHtml(formatted)}</span>
+    <span class="preview-muted">Подготовка к дальнейшей нормализации: ${escapeHtml(demo ? `${demo.title} — ${demo.artist}` : 'Трек — Исполнитель')}</span>
+  `;
+}
+
 // ------------------------------------------------------------------- init
 
 $('spotify-client-id').value = store.spotifyClientId;
 $('yandex-token').value = store.yandexToken;
 $('yandex-proxy').value = store.yandexProxy;
 $('yandex-public-link').value = store.yandexPublicLink;
+renderPublicPlaylistPreview();
 $('spotify-redirect-hint').textContent =
   `Redirect URI для Dashboard: ${window.location.origin + window.location.pathname}`;
 
 $('spotify-client-id').addEventListener('input', e => { store.spotifyClientId = e.target.value.trim(); });
 $('yandex-token').addEventListener('input', e => { store.yandexToken = e.target.value.trim(); });
 $('yandex-proxy').addEventListener('input', e => { store.yandexProxy = e.target.value.trim(); });
-$('yandex-public-link').addEventListener('input', e => { store.yandexPublicLink = e.target.value.trim(); });
+$('yandex-public-link').addEventListener('input', e => {
+  store.yandexPublicLink = e.target.value.trim();
+  renderPublicPlaylistPreview();
+});
 
-// Возврат из OAuth Spotify с кодом.
 (async () => {
   const clientId = store.spotifyClientId;
   if (clientId) {
@@ -209,17 +236,16 @@ async function runTransfer() {
     } else {
       const { source: srcKey, target: tgtKey } = NEEDS[direction];
       if (srcKey === 'yandex') {
-        // Режим «по ссылке»: публичный плейлист без токена.
         const link = parsePlaylistRef(store.yandexPublicLink);
         if (link) {
-          if (!store.yandexProxy) throw new Error('Для чтения по ссылке нужен адрес прокси (Cloudflare Worker) — инструкция в README.');
+          if (!store.yandexProxy) {
+            throw new Error('Публичный плейлист распознан, но для чтения треков нужен ваш Cloudflare Worker или аналогичный proxy.');
+          }
           if (!spotify && !store.spotifyClientId) throw new Error('Подключите Spotify (шаг 1).');
           await ensureSpotify();
           const pub = new YandexPublicClient(store.yandexProxy);
           pub.owner = link.owner; pub.kind = link.kind;
-          // Куда класть: отдельный плейлист или «Любимые треки» Spotify.
-          pub.asPlaylist = confirm(
-            'OK = перенести как отдельный плейлист в Spotify,\nОтмена = добавить в «Любимые треки» Spotify');
+          pub.asPlaylist = confirm('OK = перенести как отдельный плейлист в Spotify,\nОтмена = добавить в «Любимые треки» Spotify');
           options.categories = pub.asPlaylist ? ['playlists'] : ['likes'];
           await transferLibrary({ source: pub, target: spotify, journal, options, state, report });
         } else {
@@ -263,10 +289,9 @@ async function runExport(options) {
     state.tick('Чтение библиотеки Spotify…');
     lib = await spotify.fetchLibrary(new Set(options.categories));
   } else {
-    // Яндекс: по публичной ссылке (без токена) или токеном.
     const link = parsePlaylistRef(store.yandexPublicLink);
     if (link) {
-      if (!store.yandexProxy) throw new Error('Для чтения по ссылке нужен адрес прокси (Cloudflare Worker).');
+      if (!store.yandexProxy) throw new Error('Для чтения публичного плейлиста нужен Cloudflare Worker или аналогичный proxy.');
       const pub = new YandexPublicClient(store.yandexProxy);
       pub.owner = link.owner; pub.kind = link.kind;
       state.tick('Чтение публичного плейлиста…');
@@ -296,13 +321,10 @@ async function runImport(options, journal) {
   });
 }
 
-// Источник-файл: библиотека уже распарсена.
 class FileSource {
   constructor(lib) { this.lib = lib; }
   async fetchLibrary() { return this.lib; }
 }
-
-// ------------------------------------------------------------------ finish
 
 function finishRun(message, warn = false) {
   state.tick(message);

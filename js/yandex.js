@@ -69,7 +69,7 @@ export class YandexClient {
       artists: (item.artists || []).map(a => a.name),
       album: (albums[0] || {}).title || '',
       durationMs: item.durationMs || 0,
-      isrc: null, // неофициальный API не отдаёт ISRC
+      isrc: null,
       source: 'yandex',
     };
   }
@@ -172,20 +172,55 @@ export class YandexClient {
 
 // ------------------------------------------- публичный плейлист по ссылке/iframe
 
+export function formatPlaylistRef(ref) {
+  if (!ref || !ref.owner || !ref.kind) return '';
+  return `${ref.owner}/${ref.kind}`;
+}
+
+export function normalizeTrackArtistLine(value) {
+  if (value == null) return null;
+  const raw = String(value).trim();
+  if (!raw) return null;
+  const collapsed = raw.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  const match = collapsed.match(/^(.+?)\s*(?:—|–|-|\/|:)\s*(.+)$/);
+  if (!match) return { title: collapsed, artist: '' };
+  return { title: match[1].trim(), artist: match[2].trim() };
+}
+
 // Извлекает owner + kind из любой вставленной строки:
 //  - iframe-код: src="https://music.yandex.ru/iframe/playlist/<owner>/<kind>"
 //  - ссылка:     https://music.yandex.ru/users/<owner>/playlists/<kind>
 // Возвращает null, если распознать не удалось.
 export function parsePlaylistRef(text) {
   if (!text) return null;
+  const raw = String(text).trim();
+  const candidates = [];
+
+  const iframeMatch = raw.match(/<iframe[^>]+src=["']([^"']+)["'][^>]*>/i);
+  if (iframeMatch) candidates.push(iframeMatch[1]);
+
+  const urlMatches = raw.matchAll(/https?:\/\/[^\s"'<>]+/gi);
+  for (const match of urlMatches) candidates.push(match[0]);
+
+  if (!candidates.length) candidates.push(raw);
+
   const patterns = [
-    /music\.yandex\.[a-z]+\/iframe\/playlist\/([^/"'\s?]+)\/(\d+)/i,
+    /music\.yandex\.[a-z]+\/iframe\/(?:#\/)?playlist\/([^/"'\s?]+)\/(\d+)/i,
     /music\.yandex\.[a-z]+\/users\/([^/"'\s?]+)\/playlists\/(\d+)/i,
+    /music\.yandex\.[a-z]+\/iframe\/playlists\/([^/"'\s?]+)\/(\d+)/i,
   ];
-  for (const re of patterns) {
-    const m = String(text).match(re);
-    if (m) return { owner: m[1], kind: m[2] };
+
+  for (const candidate of candidates) {
+    const clean = candidate.replace(/&amp;/g, '&');
+    for (const re of patterns) {
+      const m = clean.match(re);
+      if (m) return { owner: m[1], kind: m[2], source: /iframe/i.test(clean) ? 'iframe' : 'link' };
+    }
   }
+
+  const direct = raw.match(/^\s*([^/\s]+)\s*\/\s*(\d+)\s*$/);
+  if (direct) return { owner: direct[1], kind: direct[2], source: 'normalized' };
+
   return null;
 }
 
@@ -205,14 +240,14 @@ export class YandexPublicClient {
       headers: { 'Content-Type': 'application/json' },
     });
     if (resp.status === 451) {
-      throw new Error('Яндекс вернул 451 «Unavailable For Legal Reasons»: запрос пришёл из региона, где Яндекс Музыка недоступна (гео-блок). Попробуйте другой регион выполнения прокси.');
+      throw new Error('Яндекс вернул 451 «Unavailable For Legal Reasons»: запрос пришёл из региона, где Яндекс Музыка недоступна (гео-ограничение).');
     }
     if (resp.status === 429) {
       const raw = resp.headers.get('Retry-After');
       throw new RateLimitError(raw ? parseFloat(raw) : null);
     }
     if (resp.status === 401 || resp.status === 403) {
-      throw new AuthError('Яндекс: плейлист приватный или недоступен. Включите публичную ссылку (Поделиться) или используйте токен.');
+      throw new AuthError('Яндекс: плейлист приватный или недоступен. Включите публичную ссылку (Поделиться) или используйте токен и прокси.');
     }
     if (resp.status >= 500) throw new TransientError(`Яндекс ${resp.status}`);
     return resp.json();
@@ -242,8 +277,6 @@ export class YandexPublicClient {
   }
 
   async fetchLibrary(categories) {
-    // Единый интерфейс источника: пайплайн вызовет с набором категорий.
-    // asPlaylist: true → плейлистом, false → как лайки.
     return this.fetchPlaylist(this.owner, this.kind, { asPlaylist: !!this.asPlaylist });
   }
 }
