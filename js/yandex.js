@@ -3,8 +3,12 @@
 // поэтому запросы идут через прокси пользователя (Cloudflare Worker из
 // worker/worker.js — токен проходит только через ВАШ собственный прокси).
 //
-// Токен получается самостоятельно (см. README):
-//  oauth.yandex.ru/authorize?response_type=token&client_id=23cabbbdc6cd418abb4b39c32c41195d
+// Два режима чтения:
+//  1. YandexClient — с OAuth-токеном: полная библиотека (лайки, плейлисты,
+//     альбомы, подписки) и ЗАПИСЬ в Яндекс.
+//  2. YandexPublicClient — без токена: публичный плейлист по ссылке/iframe
+//     (например, «Мне нравится» с включённым публичным доступом — на сайте
+//     Яндекс Музыки: плейлист → Поделиться → скопировать HTML-код).
 
 import { RateLimitError, AuthError, BadRequestError, TransientError } from './spotify.js';
 
@@ -163,5 +167,83 @@ export class YandexClient {
     const uid = await this.uid();
     await this.request('POST', `/users/${uid}/likes/artists/add`,
       { 'artist-ids': ids.map(id => parseInt(id, 10)) });
+  }
+}
+
+// ------------------------------------------- публичный плейлист по ссылке/iframe
+
+// Извлекает owner + kind из любой вставленной строки:
+//  - iframe-код: src="https://music.yandex.ru/iframe/playlist/<owner>/<kind>"
+//  - ссылка:     https://music.yandex.ru/users/<owner>/playlists/<kind>
+// Возвращает null, если распознать не удалось.
+export function parsePlaylistRef(text) {
+  if (!text) return null;
+  const patterns = [
+    /music\.yandex\.[a-z]+\/iframe\/playlist\/([^/"'\s?]+)\/(\d+)/i,
+    /music\.yandex\.[a-z]+\/users\/([^/"'\s?]+)\/playlists\/(\d+)/i,
+  ];
+  for (const re of patterns) {
+    const m = String(text).match(re);
+    if (m) return { owner: m[1], kind: m[2] };
+  }
+  return null;
+}
+
+// Чтение публичного плейлиста БЕЗ токена: вставляете ссылку/iframe —
+// и «Мне нравится» (или любой публичный плейлист) читается анонимно.
+// Для записи в Яндекс и приватных данных по-прежнему нужен токен (YandexClient).
+export class YandexPublicClient {
+  constructor(proxyUrl) {
+    this.proxyUrl = (proxyUrl || '').replace(/\/+$/, '');
+  }
+
+  async request(path) {
+    if (!this.proxyUrl) {
+      throw new Error('Не задан адрес прокси для Яндекс Музыки (CORS). Инструкция — в README.');
+    }
+    const resp = await fetch(this.proxyUrl + path, {
+      headers: { 'Content-Type': 'application/json' },
+    });
+    if (resp.status === 451) {
+      throw new Error('Яндекс вернул 451 «Unavailable For Legal Reasons»: запрос пришёл из региона, где Яндекс Музыка недоступна (гео-блок). Попробуйте другой регион выполнения прокси.');
+    }
+    if (resp.status === 429) {
+      const raw = resp.headers.get('Retry-After');
+      throw new RateLimitError(raw ? parseFloat(raw) : null);
+    }
+    if (resp.status === 401 || resp.status === 403) {
+      throw new AuthError('Яндекс: плейлист приватный или недоступен. Включите публичную ссылку (Поделиться) или используйте токен.');
+    }
+    if (resp.status >= 500) throw new TransientError(`Яндекс ${resp.status}`);
+    return resp.json();
+  }
+
+  // Возвращает библиотеку в формате пайплайна: треки как лайки или как плейлист.
+  async fetchPlaylist(owner, kind, { asPlaylist = true } = {}) {
+    const payload = await this.request(`/users/${owner}/playlists/${kind}`);
+    const result = payload.result;
+    if (!result || !result.tracks) {
+      throw new Error('Плейлист пуст или не найден. Проверьте, что он публичный.');
+    }
+    const tracks = result.tracks
+      .map(t => (t && t.track) ? YandexClient.trackFromYandex(t.track) : YandexClient.trackFromYandex(t))
+      .filter(t => t.id && t.title);
+    if (!tracks.length) {
+      throw new Error('В плейлисте не нашлось треков (приватный или пустой).');
+    }
+    const playlist = {
+      id: String(result.kind || kind), kind: String(result.kind || kind),
+      title: result.title || 'Мне нравится',
+      description: '', coverUrl: result.cover?.items?.[0]?.url || null,
+      tracks,
+    };
+    if (asPlaylist) return { likes: [], playlists: [playlist], albums: [], artists: [] };
+    return { likes: tracks, playlists: [], albums: [], artists: [] };
+  }
+
+  async fetchLibrary(categories) {
+    // Единый интерфейс источника: пайплайн вызовет с набором категорий.
+    // asPlaylist: true → плейлистом, false → как лайки.
+    return this.fetchPlaylist(this.owner, this.kind, { asPlaylist: !!this.asPlaylist });
   }
 }

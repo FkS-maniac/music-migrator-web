@@ -59,6 +59,7 @@ export async function transferLibrary({ source, target, journal, options, state,
 
 async function transferChunked({ items, chunkSize, save, target = null, journal, options, state, report, keyPrefix, skipMatch = false }) {
   let buffer = [], bufferKeys = [];
+  state.total = Math.max(state.total, state.processed + items.length);
 
   const flush = async () => {
     if (!buffer.length || options.dryRun) { buffer = []; bufferKeys = []; return; }
@@ -105,6 +106,7 @@ async function transferChunked({ items, chunkSize, save, target = null, journal,
       buffer.push(track);
     }
     bufferKeys.push(key);
+    state.processed++;
     if (buffer.length >= chunkSize) await flush();
   }
   await flush();

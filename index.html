@@ -41,6 +41,9 @@
         <input type="text" id="yandex-proxy" placeholder="https://my-worker.username.workers.dev" autocomplete="off">
         <button class="btn" id="yandex-connect">Подключить Яндекс</button>
         <span class="status" id="yandex-status">не подключён</span>
+        <label style="margin-top:16px">Или публичный плейлист — без токена (на сайте Яндекс Музыки: плейлист → Поделиться → скопировать HTML-код)</label>
+        <input type="text" id="yandex-public-link" placeholder="iframe-код или ссылка music.yandex.ru/users/…/playlists/3" autocomplete="off">
+        <p class="hint">Работает для публичных плейлистов, включая «Мне нравится». Токен нужен только для записи в Яндекс и приватных плейлистов.</p>
       </div>
     </div>
     <p class="security">🔒 Токены хранятся только в вашем браузере (localStorage) и передаются напрямую в API сервиса. Для Яндекса — только через ваш собственный прокси. Никаких логинов и паролей.</p>
