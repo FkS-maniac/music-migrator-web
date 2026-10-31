@@ -7,7 +7,6 @@ import { transferLibrary, RateLimitStop } from './transfer.js';
 const $ = id => document.getElementById(id);
 
 let activeMode = 'yandex-import';
-let importedTracks = [];
 let loadedFile = null;
 let spotify = null;
 
@@ -40,7 +39,7 @@ function renderYandexMeta(text) {
   meta.textContent = `Распознан: ${ref.owner} / ${ref.kind}`;
 }
 
-function safeDownload(filename, content, type) {
+function downloadFile(filename, content, type) {
   download(filename, content, type);
 }
 
@@ -53,7 +52,7 @@ $('#make-file-btn').addEventListener('click', () => {
 
   const ref = parsePlaylistRef(raw);
   if (!ref) {
-    alert('Не удалось распознать ссылку. Используйте формат music.yandex.ru/users/.../playlists/3 либо iframe src=.../playlist/...');
+    alert('Не удалось распознать ссылку. Используйте формат music.yandex.ru/users/.../playlists/3 или iframe src=.../playlist/...');
     return;
   }
 
@@ -64,10 +63,10 @@ $('#make-file-btn').addEventListener('click', () => {
     raw,
     createdAt: new Date().toISOString(),
     tracks: [],
-    notes: 'Список треков можно собрать вручную или через proxy/backend. Этот JSON нужен как файл-источник для дальнейшего импорта в Spotify.'
+    notes: 'Основной сценарий — сохранить файл и загрузить его на главной странице. Прямой парсинг iframe в браузере без proxy/backend не работает из-за ограничений CORS.'
   };
 
-  safeDownload('yandex-playlist-template.json', JSON.stringify(payload, null, 2), 'application/json');
+  downloadFile('yandex-playlist-template.json', JSON.stringify(payload, null, 2), 'application/json');
   renderYandexMeta(raw);
 });
 
@@ -82,7 +81,7 @@ $('#download-template-btn').addEventListener('click', () => {
       { title: 'Трек 2', artist: 'Исполнитель 2' }
     ]
   };
-  safeDownload('yandex-playlist-template.json', JSON.stringify(sample, null, 2), 'application/json');
+  downloadFile('yandex-playlist-template.json', JSON.stringify(sample, null, 2), 'application/json');
 });
 
 $('#preview-file-btn').addEventListener('click', async () => {
@@ -123,7 +122,7 @@ function escapeHtml(str) {
   return String(str).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 }
 
-displayReport = () => {
+function displayReport() {
   const reportCard = $('#report-card');
   reportCard.classList.remove('hidden');
   const summary = $('#report-summary');
@@ -138,12 +137,12 @@ displayReport = () => {
     ...reportState.notFound.map(x => `<li class="warn">${escapeHtml(x.title)} — ${escapeHtml(x.reason)}</li>`),
     ...reportState.errors.map(x => `<li class="danger">${escapeHtml(x.title)} — ${escapeHtml(x.reason)}</li>`),
   ].join('');
-};
+}
 
 $('#import-spotify').addEventListener('click', async () => {
   try {
     if (!loadedFile) {
-      alert('Сначала загрузите файл с плеером Яндекс Музыки');
+      alert('Сначала загрузите файл с плейлистом Яндекс Музыки');
       return;
     }
 
@@ -164,6 +163,11 @@ $('#import-spotify').addEventListener('click', async () => {
     const fileText = await loadedFile.text();
     const parsed = parseImportFile(fileText, loadedFile.name);
 
+    if (!parsed.likes.length) {
+      alert('Файл не содержит треков в поддерживаемом формате. Используйте JSON, TXT или CSV.');
+      return;
+    }
+
     const journal = new Journal('file-import');
     const progress = {
       aborted: false,
@@ -177,14 +181,6 @@ $('#import-spotify').addEventListener('click', async () => {
       },
     };
 
-    const target = spotify;
-    const options = {
-      categories: ['likes'],
-      dryRun: false,
-      strictSearch: false,
-      searchDelayMs: 1000,
-    };
-
     reportState.transferred = [];
     reportState.notFound = [];
     reportState.errors = [];
@@ -195,9 +191,14 @@ $('#import-spotify').addEventListener('click', async () => {
 
     await transferLibrary({
       source: { fetchLibrary: async () => parsed },
-      target,
+      target: spotify,
       journal,
-      options,
+      options: {
+        categories: ['likes'],
+        dryRun: false,
+        strictSearch: false,
+        searchDelayMs: 1000,
+      },
       state: progress,
       report: reportState,
     });
