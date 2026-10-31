@@ -3,119 +3,66 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>music-migrator — публичный импорт Яндекс Музыки и перенос в Spotify</title>
+<title>Yandex → Spotify importer</title>
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-<header>
-  <h1>🎵 music-migrator</h1>
-  <p class="subtitle">Публичный импорт Яндекс Музыки + перенос в Spotify — без лишних сложностей</p>
-</header>
+  <header>
+    <h1>🎵 Yandex → Spotify</h1>
+    <p class="subtitle">Импорт публичного плейлиста Яндекс Музыки в Spotify через удобный список треков</p>
+  </header>
 
-<nav class="tabs" id="tabs">
-  <button data-direction="yandex-to-spotify" class="active">Яндекс → Spotify</button>
-  <button data-direction="spotify-to-yandex">Spotify → Яндекс</button>
-  <button data-direction="likes-to-playlist">Лайки → плейлист</button>
-  <button data-direction="export">Экспорт в файл</button>
-  <button data-direction="import">Импорт из файла</button>
-</nav>
+  <main>
+    <section class="card">
+      <h2>1. Подключите Spotify</h2>
+      <label>Client ID</label>
+      <input id="spotify-client-id" type="text" placeholder="Spotify Client ID">
+      <p class="hint" id="spotify-redirect-hint"></p>
+      <button id="spotify-connect" class="btn">Подключить Spotify</button>
+      <span id="spotify-status" class="status">не подключён</span>
+    </section>
 
-<main>
-  <section class="card" id="accounts">
-    <h2>1. Подключение Spotify</h2>
-    <div class="account-grid single-column">
-      <div class="account">
-        <label>Client ID (из <a href="https://developer.spotify.com/dashboard" target="_blank" rel="noopener">Developer Dashboard</a>)</label>
-        <input type="text" id="spotify-client-id" placeholder="например 4f2c1a…" autocomplete="off">
-        <p class="hint" id="spotify-redirect-hint"></p>
-        <button class="btn" id="spotify-connect">Подключить Spotify</button>
-        <span class="status" id="spotify-status">не подключён</span>
+    <section class="card">
+      <h2>2. Вставьте ссылку или iframe Яндекс Музыки</h2>
+      <label>Ссылка / iframe</label>
+      <input id="yandex-link" type="text" placeholder="https://music.yandex.ru/users/.../playlists/3 или iframe-код">
+
+      <label>Proxy URL (обязательно для чтения публичного плейлиста)</label>
+      <input id="yandex-proxy" type="text" placeholder="https://my-worker.example.workers.dev">
+
+      <div class="row">
+        <label class="switch"><input id="import-mode" type="checkbox"> Импортировать как отдельный плейлист в Spotify</label>
       </div>
-    </div>
-  </section>
 
-  <section class="card" id="public-yandex-card">
-    <h2>2. Публичный плейлист Яндекс Музыки</h2>
-    <p class="hint strong">Для браузера поддерживается только публичный плейлист: ссылка или iframe из Яндекс Музыки. Приватную библиотеку можно читать только через OAuth + proxy/backend.</p>
-
-    <label>Вставьте ссылку или iframe публичного плейлиста</label>
-    <input type="text" id="yandex-public-link" placeholder="https://music.yandex.ru/users/.../playlists/3 или iframe-код" autocomplete="off">
-    <div id="yandex-public-link-preview" class="public-link-preview hidden"></div>
-
-    <div class="mini-box">
-      <h3>Что получится</h3>
-      <p>Сайт распознает owner/kind, подготовит публичную ссылку к дальнейшей обработке и приведет данные к формату «Трек — Исполнитель».</p>
-    </div>
-  </section>
-
-  <details class="card advanced" open>
-    <summary>3. Дополнительные настройки (расширенный режим)</summary>
-    <div class="account-grid">
-      <div class="account">
-        <h3>Яндекс Музыка (только для расширенного режима)</h3>
-        <label>OAuth-токен</label>
-        <input type="password" id="yandex-token" placeholder="y0_AgAAAA…" autocomplete="off">
-        <label>Адрес вашего прокси (Cloudflare Worker)</label>
-        <input type="text" id="yandex-proxy" placeholder="https://my-worker.username.workers.dev" autocomplete="off">
-        <button class="btn" id="yandex-connect">Подключить Яндекс</button>
-        <span class="status" id="yandex-status">не подключён</span>
-        <p class="hint">Этот режим нужен только для приватной библиотеки, OAuth + proxy/backend. Для обычного публичного импорта информация берется из ссылки / iframe.</p>
+      <div class="actions">
+        <button id="parse-btn" class="btn primary">Распознать и собрать список</button>
+        <button id="download-txt" class="btn">Скачать список (.txt)</button>
       </div>
-    </div>
-  </details>
 
-  <section class="card" id="options-card">
-    <h2>4. Что переносить</h2>
-    <div class="checkboxes" id="categories">
-      <label><input type="checkbox" value="likes" checked> Лайки / «Мне нравится»</label>
-      <label><input type="checkbox" value="playlists" checked> Плейлисты</label>
-      <label><input type="checkbox" value="albums"> Альбомы</label>
-      <label><input type="checkbox" value="artists"> Подписки на артистов</label>
-    </div>
-    <div class="checkboxes">
-      <label><input type="checkbox" id="dry-run"> Режим dry-run (ничего не записывать)</label>
-      <label><input type="checkbox" id="strict-search"> Strict search (повтор по первому артисту)</label>
-      <label>Задержка поиска: <input type="number" id="search-delay" value="1.0" min="0.1" step="0.1" style="width:5em"> с</label>
-    </div>
-    <div id="playlist-title-row" class="hidden">
-      <label>Название плейлиста: <input type="text" id="playlist-title" value="My Liked Songs"></label>
-    </div>
-    <div id="file-input-row" class="hidden">
-      <label>Файл библиотеки (JSON/CSV): <input type="file" id="import-file" accept=".json,.csv"></label>
-    </div>
-  </section>
+      <div id="playlist-meta" class="meta hidden"></div>
+    </section>
 
-  <section class="card">
-    <h2>5. Запуск</h2>
-    <div class="run-row">
-      <button class="btn primary" id="run-btn">Начать перенос</button>
-      <button class="btn danger hidden" id="abort-btn">Остановить</button>
-      <span id="journal-info" class="hint"></span>
-      <button class="btn small" id="reset-journal-btn" title="Сбросить прогресс этой вкладки">Сбросить прогресс</button>
-    </div>
-    <div id="progress-wrap" class="hidden">
-      <div class="progress-status" id="progress-status">Готов...</div>
-      <div class="progress-bar"><div id="progress-fill"></div></div>
-      <div class="progress-counters" id="progress-counters"></div>
-    </div>
-  </section>
+    <section class="card">
+      <h2>3. Список треков</h2>
+      <textarea id="track-list" readonly placeholder="После распознавания ссылка будет преобразована в список вида: Трек — Исполнитель"></textarea>
+    </section>
 
-  <section class="card hidden" id="report-card">
-    <h2>Отчёт</h2>
-    <div class="report-summary" id="report-summary"></div>
-    <div class="report-actions">
-      <button class="btn small" id="download-report">Скачать отчёт (JSON)</button>
-      <button class="btn small" id="download-notfound">Скачать «не найдено» (CSV)</button>
-    </div>
-    <details id="notfound-details"><summary>Не найдено (<span id="notfound-count">0</span>)</summary><ul id="notfound-list"></ul></details>
-    <details id="errors-details"><summary>Ошибочные (<span id="errors-count">0</span>)</summary><ul id="errors-list"></ul></details>
-  </section>
-</main>
+    <section class="card">
+      <h2>4. Импорт в Spotify</h2>
+      <button id="import-spotify" class="btn primary wide">Импортировать в Spotify</button>
+      <div id="progress-wrap" class="hidden">
+        <div id="progress-status" class="progress-status">Готово</div>
+        <div class="progress-bar"><div id="progress-fill"></div></div>
+      </div>
+    </section>
 
-<footer>
-  <p>Публичный плейлист Яндекс Музыки через ссылку/iframe — основной сценарий для браузера. Приватный каталог требует токена и backend/proxy; браузер сам по себе не может читать закрытые данные Яндекса.</p>
-</footer>
+    <section id="report-card" class="card hidden">
+      <h2>Отчёт</h2>
+      <div id="report-summary" class="summary"></div>
+      <ul id="report-list"></ul>
+    </section>
+  </main>
 
-<script type="module" src="js/main.js"></script>
+  <script type="module" src="js/main.js"></script>
 </body>
 </html>
